@@ -35,6 +35,7 @@
                         }
                     }),
                 ]),
+                
                 Vnode('ul', { class: 'todo-list' }, [
                     getTodos().filter(filterFn).map(todo =>
                         Vnode('li', { key: todo.id, class: todo.completed ? 'completed' : '' }, [
@@ -55,7 +56,7 @@
                         ])
                     )
                 ]),
-                Vnode('footer', { class: 'footer' }, [
+                getTodos().length > 0 && Vnode('footer', { class: 'footer' }, [
                     Vnode('span', { class: 'todo-count' }, `${getTodos().filter(t => !t.completed).length} item left!`),
                     Vnode('ul', { class: 'filters' }, [
                         Vnode('li', {}, [
