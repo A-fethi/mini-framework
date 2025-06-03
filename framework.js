@@ -1,18 +1,26 @@
 let currentEffect = null;
+let batchQueue = [];
+let isBatching = false;
 
-// Core: VNode and render
+// ========== CORE ==========
 export function Vnode(tag, attrs = {}, children = []) {
-  return { tag, attrs, children: Array.isArray(children) ? children.flat() : [children] };
+  return {
+    tag,
+    attrs,
+    children: Array.isArray(children) ? children.flat() : [children],
+    hooks: {}
+  };
 }
 
 export function render(component, container) {
+  if (!container) return;
   let currentDOM = null;
   effect(() => {
     currentDOM = patch(container, currentDOM, component());
   });
 }
 
-// Reactivity
+// ========== REACTIVITY ==========
 export function createState(initial) {
   let state = initial;
   const listeners = new Set();
@@ -23,142 +31,165 @@ export function createState(initial) {
   };
 
   const set = (next) => {
-    if (state !== next) {
-      state = next;
-      listeners.forEach((fn) => fn());
-    }
+    if (state === next) return;
+    state = next;
+    isBatching ? batchQueue.push(...listeners) : listeners.forEach(fn => fn());
   };
 
   return [get, set];
 }
 
 export function effect(fn) {
-  const run = () => {
-    currentEffect = run;
+  const execute = () => {
+    currentEffect = execute;
     fn();
     currentEffect = null;
   };
-  run();
+  execute();
 }
 
-// DOM Patching
-function patch(parent, oldDOM, vnode) {
-  if (!vnode) return document.createTextNode('');
-  if (!oldDOM) return parent.appendChild(createElement(vnode));
-
-  if (shouldReplace(oldDOM, vnode)) {
-    const newDOM = createElement(vnode);
-    parent.replaceChild(newDOM, oldDOM);
-    return newDOM;
-  }
-
-  if (typeof vnode === 'string' || typeof vnode === 'number') {
-    if (oldDOM.nodeValue !== String(vnode)) {
-      const newText = document.createTextNode(String(vnode));
-      parent.replaceChild(newText, oldDOM);
-      return newText;
-    }
-    return oldDOM;
-  }
-
-  updateElement(oldDOM, vnode);
-  return oldDOM;
+export function batch(fn) {
+  isBatching = true;
+  fn();
+  isBatching = false;
+  [...new Set(batchQueue)].forEach(fn => fn());
+  batchQueue = [];
 }
 
-function shouldReplace(oldDOM, vnode) {
-  return typeof vnode === 'object' &&
-    (oldDOM.nodeType !== 1 || oldDOM.tagName.toLowerCase() !== vnode.tag);
+// ========== DOM PATCHING ==========
+function patch(parent, oldNode, newNode) {
+  if (!parent) return null;
+  
+  // Handle empty/array nodes
+  if (newNode == null) return document.createTextNode('');
+  if (Array.isArray(newNode)) return patchFragment(parent, oldNode, newNode);
+  
+  // Handle text nodes
+  if (typeof newNode !== 'object') return patchText(parent, oldNode, newNode);
+  
+  // Handle component nodes
+  if (typeof newNode.tag === 'function') {
+    const componentVNode = newNode.tag(newNode.attrs);
+    componentVNode.hooks = newNode.hooks;
+    return patch(parent, oldNode, componentVNode);
+  }
+  
+  // Handle element replacement
+  if (!oldNode || shouldReplace(oldNode, newNode)) {
+    return replaceNode(parent, oldNode, newNode);
+  }
+  
+  // Update existing element
+  updateElement(oldNode, newNode);
+  return oldNode;
+}
+
+function patchFragment(parent, oldNode, children) {
+  const fragment = document.createDocumentFragment();
+  children.forEach(child => fragment.appendChild(patch(parent, null, child)));
+  return fragment;
+}
+
+function patchText(parent, oldNode, text) {
+  if (oldNode?.nodeValue === String(text)) return oldNode;
+  const newText = document.createTextNode(String(text));
+  if (oldNode && parent.contains(oldNode)) parent.replaceChild(newText, oldNode);
+  else parent.appendChild(newText);
+  return newText;
+}
+
+function shouldReplace(oldNode, newNode) {
+  const isOldText = oldNode.nodeType === 3;
+  const isNewText = typeof newNode === 'string' || typeof newNode === 'number';
+  if (isOldText !== isNewText) return true;
+  return !isNewText && oldNode.tagName.toLowerCase() !== newNode.tag;
+}
+
+function replaceNode(parent, oldNode, newNode) {
+  const newDOM = createElement(newNode);
+  if (oldNode && parent.contains(oldNode)) parent.replaceChild(newDOM, oldNode);
+  else parent.appendChild(newDOM);
+  return newDOM;
 }
 
 function createElement(vnode) {
+  if (vnode == null) return document.createTextNode('');
+  if (Array.isArray(vnode)) return patchFragment(null, null, vnode);
   if (typeof vnode !== 'object') return document.createTextNode(String(vnode));
-  if (typeof vnode.tag === 'function') return createElement(vnode.tag(vnode.attrs));
-
+  
   const el = document.createElement(vnode.tag);
+  if (vnode.hooks.onMount) vnode.hooks.onMount(el);
   updateElement(el, vnode);
   return el;
 }
 
 function updateElement(el, vnode) {
-  // Attributes and events
-  for (const [key, value] of Object.entries(vnode.attrs || {})) {
-    if (key.startsWith('on:')) {
-      el[`on${key.slice(3)}`] = value;
-    } else if (key === 'value' && el instanceof HTMLInputElement) {
-      if (el.value !== value) el.value = value;
-    } else if (value === true) {
-      el.setAttribute(key, '');
-    } else if (value !== false && value != null) {
-      el.setAttribute(key, value);
-    }
+  if (!vnode.attrs) return;
+  
+  for (const [key, value] of Object.entries(vnode.attrs)) {
+    if (key === 'ref') value(el);
+    else if (key.startsWith('on') && typeof value === 'function') el[key.toLowerCase()] = value;
+    else if (key === 'value' && el instanceof HTMLInputElement) el.value = value;
+    else if (key === 'checked' && el instanceof HTMLInputElement) el.checked = value; // <-- Added
+    else if (value === true) el.setAttribute(key, '');
+    else if (value !== false && value != null) el.setAttribute(key, value);
   }
 
-  // Keyed children diffing
-  const children = vnode.children || [];
-  const oldChildren = Array.from(el.childNodes);
-  const keyedMap = new Map();
-
-  oldChildren.forEach((node) => {
-    if (node.nodeType === 1) {
-      const k = node.getAttribute('key');
-      if (k != null) keyedMap.set(k, node);
-    }
-  });
-
-  const newOrder = [];
-  children.forEach((childVNode, idx) => {
-    const k = childVNode.attrs && childVNode.attrs.key;
-    let node;
-
-    if (k != null && keyedMap.has(String(k))) {
-      node = keyedMap.get(String(k));
-      keyedMap.delete(String(k));
-      patch(el, node, childVNode);
-    } else {
-      const oldNode = oldChildren[idx];
-      node = patch(el, oldNode, childVNode);
-    }
-
-    newOrder.push(node);
-  });
-
-  newOrder.forEach((node, i) => {
-    const ref = el.childNodes[i];
-    if (ref !== node) el.insertBefore(node, ref || null);
-  });
-
-  keyedMap.forEach((node) => el.removeChild(node));
-
-  const totalNew = children.length;
-  Array.from(el.childNodes)
-    .slice(totalNew)
-    .forEach((node) => el.removeChild(node));
+  reconcileChildren(el, vnode.children || []);
 }
 
-// Routing
+function reconcileChildren(el, children) {
+  const oldChildren = Array.from(el.childNodes);
+  const keyedOld = getKeyedNodes(oldChildren);
+  const newOrder = [];
+
+  children.forEach((child, i) => {
+    // 👇 Skip null/undefined
+    if (child == null) return;
+
+    const key = typeof child === 'object' ? child.attrs?.key : null;
+    const node = key != null && keyedOld.has(key)
+      ? keyedOld.get(key)
+      : oldChildren[i];
+
+    newOrder.push(patch(el, node, child));
+  });
+
+  // Re-order and cleanup
+  newOrder.forEach((node, i) => {
+    if (el.childNodes[i] !== node) {
+      el.insertBefore(node, el.childNodes[i] || null);
+    }
+  });
+
+  // Remove excess nodes
+  while (el.childNodes.length > newOrder.length) {
+    el.removeChild(el.lastChild);
+  }
+}
+
+
+function getKeyedNodes(nodes) {
+  const keyed = new Map();
+  nodes.forEach(node => {
+    if (node.nodeType === 1) {
+      const key = node.getAttribute('key');
+      if (key != null) keyed.set(key, node);
+    }
+  });
+  return keyed;
+}
+
+// ========== ROUTER ==========
 export function startRouter(routes, container, fallback = () => Vnode('div', {}, 'Not Found')) {
   const [getHash, setHash] = createState(window.location.hash);
-
-  function Router() {
+  let currentDOM = null;
+  
+  window.addEventListener('hashchange', () => setHash(window.location.hash));
+  
+  effect(() => {
     const path = getHash().slice(1) || '/';
     const view = routes[path] || fallback;
-    return view();
-  }
-
-  window.addEventListener('hashchange', () => setHash(window.location.hash));
-  render(Router, container);
-}
-
-export function appendChild(parent, vnode) {
-  const el = createElement(vnode);
-  parent.appendChild(el);
-  return el;
-}
-
-export function append(parent, ...vnodes) {
-  vnodes.flat().forEach(vnode => {
-    const el = createElement(vnode);
-    parent.append(el);
+    currentDOM = patch(container, currentDOM, view());
   });
 }
-

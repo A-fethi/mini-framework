@@ -31,19 +31,19 @@
 
     // --- Todos view ---
     const [getTodos, setTodos] = createState([]);
-    const [getNew, setNew]     = createState('');
+    const [getNew, setNew] = createState('');
 
     function Todos() {
-      return Vnode('div', { class: 'todos' }, [
+      return Vnode('div', { className: 'todos' }, [
         Vnode('h2', {}, 'Todo List'),
         Vnode('input', {
           type: 'text',
           value: getNew(),
-          'on:input': e => setNew(e.target.value),
+          onInput: e => setNew(e.target.value),
           placeholder: 'Enter new todo…'
         }),
         Vnode('button', {
-          'on:click': () => {
+          onClick: () => {
             const text = getNew().trim();
             if (!text) return;
             setTodos([...getTodos(), { id: Date.now(), text }]);
@@ -55,7 +55,7 @@
             Vnode('li', { key: todo.id }, [
               Vnode('span', {}, todo.text),
               Vnode('button', {
-                'on:click': () =>
+                onClick: () =>
                   setTodos(getTodos().filter(t => t.id !== todo.id))
               }, 'Remove')
             ])

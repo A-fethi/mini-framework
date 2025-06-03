@@ -1,156 +1,170 @@
-# Overview
+# Reactive Mini-Framework Documentation
 
-This is a minimalist JavaScript framework that enables reactive, component-based UI development using virtual nodes (vnodes), a simple diffing algorithm, and reactivity primitives. It provides a clean abstraction over the DOM, basic reactivity, and support for routing.
+## Overview
 
----
+This framework provides a lightweight solution for building reactive, component-based UIs with virtual DOM diffing and state management. It features:
 
-## Vnode Function
+- Virtual DOM with efficient patching
+- Reactive state management
+- Component-based architecture
+- Built-in routing
+- Batched updates for performance
 
-The `Vnode` function creates a virtual representation of an HTML element or component. It takes three arguments:
+## Core API
 
-- `tag`: a string (e.g. `"div"`) or a component function.
-- `attrs`: an object containing attributes and event handlers (e.g. `{ id: "main", "on:click": handler }`).
-- `children`: either a single child or an array of children (text, Vnode objects, or both).
+### `Vnode(tag, attrs, children)`
+Creates a virtual DOM node.
 
-Example:
+**Parameters:**
+- `tag`: HTML tag name or component function
+- `attrs`: Object of attributes/props
+- `children`: Child nodes (can be array or single node)
 
+**Example:**
 ```js
-const button = Vnode("button", { class: "btn", "on:click": () => alert("Hello") }, "Click me");
-```
-
----
-
-## Reactivity: `createState` and `effect`
-
-### `createState(initial)`
-
-This function returns a getter and a setter for a reactive value:
-
-```js
-const [getCount, setCount] = createState(0);
-```
-
-- When a reactive value is accessed inside an effect, the effect is subscribed.
-- When the setter is called and the value changes, all subscribed effects re-run.
-
-### `effect(fn)`
-
-Runs a reactive effect. The function you pass will re-run whenever any `get()` inside it changes.
-
-```js
-effect(() => {
-  console.log("Current count:", getCount());
-});
-```
-
----
-
-## Rendering: `render`
-
-```js
-render(App, document.getElementById("root"));
-```
-
-- The `render` function mounts a component function into a DOM container.
-- Internally, it wraps the component with a reactive `effect` and manages patching.
-
----
-
-## DOM Diffing and Patching
-
-The framework compares a virtual node tree with the real DOM using `patch` and `updateElement`.
-
-### Key Concepts:
-
-- **Initial Mount:** If there's no previous DOM, create new elements.
-- **Replacement:** If the tag type or content differs, replace the node.
-- **Update in Place:** If the tag is the same, reuse the element and update its attributes/children.
-- **Children Reconciliation:** The framework uses a keyed diffing strategy if `key` attributes are present.
-
-Example:
-
-```js
-const view = () => Vnode("div", {}, [
-  Vnode("h1", {}, "Welcome"),
-  Vnode("ul", {}, items.map(item => Vnode("li", { key: item.id }, item.text)))
+const view = Vnode('div', { class: 'container' }, [
+  Vnode('h1', {}, 'Hello World'),
+  Vnode('button', { 'on:click': () => alert('Hi') }, 'Click me')
 ]);
 ```
 
-### Keyed Diffing
+### `render(component, container)`
+Renders a component into a DOM container and sets up reactivity.
 
-When `key` attributes are present on children, the framework:
+**Example:**
+```js
+render(App, document.getElementById('root'));
+```
 
-1. Caches existing DOM nodes by key.
-2. Reuses nodes in the new order.
-3. Reorders or removes nodes as necessary.
-4. Falls back to index-based diffing if no key is provided.
+## Reactivity System
 
----
+### `createState(initialValue)`
+Creates a reactive state with getter/setter pair.
+
+**Returns:**
+- `[get, set]` tuple
+
+**Example:**
+```js
+const [getCount, setCount] = createState(0);
+
+// Get value
+console.log(getCount());
+
+// Set value
+setCount(5);
+```
+
+### `effect(fn)`
+Runs a function and tracks dependencies, re-running when dependencies change.
+
+**Example:**
+```js
+effect(() => {
+  console.log('Count changed:', getCount());
+});
+```
+
+### `batch(fn)`
+Batches multiple state updates into a single re-render.
+
+**Example:**
+```js
+batch(() => {
+  setCount(1);
+  setUser('Alice');
+  // Only one re-render occurs
+});
+```
+
+## DOM Patching
+
+The framework uses an efficient diffing algorithm that:
+
+1. Compares nodes by type first
+2. Uses keys for list reconciliation when available
+3. Updates only changed attributes
+4. Reorders DOM nodes rather than recreating when possible
+
+**Keyed List Example:**
+```js
+const items = [{id: 1, text: 'First'}, {id: 2, text: 'Second'}];
+
+function List() {
+  return Vnode('ul', {}, 
+    items.map(item => 
+      Vnode('li', { key: item.id }, item.text)
+    )
+  );
+}
+```
 
 ## Event Handling
 
-To bind events, use attributes like `"on:click"` in the vnode:
+Events are bound using `on:` prefix attributes:
 
 ```js
-Vnode("button", { "on:click": () => alert("Clicked!") }, "Click Me")
+Vnode('button', { 
+  'on:click': () => console.log('Clicked!'),
+  'on:mouseover': () => console.log('Hovered')
+}, 'Interact me');
 ```
 
-The framework converts this into DOM event listeners like `element.onclick`.
+## Form Binding
 
----
-
-## Input Binding
-
-Inputs can be controlled using the `value` attribute:
+Form inputs can be bound to state:
 
 ```js
-const [getInput, setInput] = createState("");
+const [getText, setText] = createState('');
 
-Vnode("input", {
-  type: "text",
-  value: getInput(),
-  "on:input": e => setInput(e.target.value)
-})
+function Input() {
+  return Vnode('input', {
+    type: 'text',
+    value: getText(),
+    'on:input': e => setText(e.target.value)
+  });
+}
 ```
 
-This pattern keeps your UI and state in sync without external libraries.
+## Routing
 
----
+### `startRouter(routes, container, fallback)`
+Sets up hash-based routing.
 
-## Routing Support
+**Parameters:**
+- `routes`: Object mapping paths to components
+- `container`: DOM element to render into
+- `fallback`: Component to render for unknown routes (optional)
 
-Hash-based routing is built in.
-
-### `startRouter(routes, container, fallback?)`
-
-- `routes`: an object mapping paths (e.g. `"/about"`) to component functions.
-- `container`: where to render the view.
-- `fallback`: optional component if no match is found.
-
-Example:
-
+**Example:**
 ```js
-const Home = () => Vnode("div", {}, "Welcome Home");
-const Todo = () => Vnode("div", {}, "Your Todos");
+const Home = () => Vnode('div', {}, 'Home Page');
+const About = () => Vnode('div', {}, 'About Us');
 
 startRouter({
-  "/": Home,
-  "/todo": Todo
-}, document.getElementById("app"));
+  '/': Home,
+  '/about': About
+}, document.getElementById('app'));
 ```
 
-This listens to `window.location.hash` and updates the UI when it changes.
+## Lifecycle Hooks
 
----
+Components can use hooks via the `hooks` property:
 
-## Summary
+```js
+function Component() {
+  return Vnode('div', {}, 'Hello', {
+    hooks: {
+      onMount: (el) => console.log('Mounted', el),
+      onUnmount: (el) => console.log('Unmounted', el)
+    }
+  });
+}
+```
 
-This framework gives you:
+## Performance Features
 
-- A virtual DOM abstraction.
-- A reactive state system.
-- A component model based on pure functions.
-- Keyed diffing for efficient DOM updates.
-- Hash-based routing out of the box.
-
-It keeps the implementation simple and comprehensible while covering the essential building blocks for a modern UI system.
+1. **Batched Updates**: Multiple state changes in a `batch` trigger a single re-render
+2. **Keyed Reconciliation**: Lists with keys minimize DOM operations
+3. **Lazy Attribute Updates**: Only modified attributes are applied
+4. **Text Node Optimization**: Text content comparisons prevent unnecessary updates
