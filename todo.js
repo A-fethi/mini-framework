@@ -97,8 +97,7 @@ function Todos(filterFn) {
                 ]),
                 Vnode('button', {
                     onClick: () => setTodos(getTodos().filter(todo => !todo.completed)),
-                    class: 'clear-completed',
-                    disabled: !getTodos().some(todo => todo.completed)
+                    class: 'clear-completed'
                 }, 'Clear completed')
             ])
             : null
