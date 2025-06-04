@@ -22,6 +22,20 @@ function Todos(filterFn) {
                 }
             }),
         ]),
+        getTodos().length > 0 ? Vnode('div', { class: 'toggle-all-container' }, [
+            Vnode('input', {
+                type: 'checkbox',
+                id: 'toggle-all-input',
+                class: 'toggle-all',
+                checked: getTodos().every(todo => todo.completed),
+                onClick: () => {
+                    const allCompleted = getTodos().every(todo => todo.completed);
+                    setTodos(getTodos().map(todo => ({ ...todo, completed: !allCompleted })));
+                }
+            }),
+            Vnode('label', { class: 'toggle-all-label', for: 'toggle-all-input' })
+        ])
+            : null,
 
         Vnode('ul', { class: 'todo-list' }, [
             getTodos().filter(filterFn).map(todo =>
@@ -78,7 +92,7 @@ function Todos(filterFn) {
                 ])
             )
         ]),
-        
+
         getTodos().length > 0
             ? Vnode('footer', { class: 'footer' }, [
                 Vnode('span', { class: 'todo-count' },
@@ -95,10 +109,12 @@ function Todos(filterFn) {
                         Vnode('a', { href: '#/completed', class: location.hash === '#/completed' ? 'selected' : '' }, 'Completed')
                     ])
                 ]),
-                Vnode('button', {
-                    onClick: () => setTodos(getTodos().filter(todo => !todo.completed)),
-                    class: 'clear-completed'
-                }, 'Clear completed')
+                getTodos().some(todo => todo.completed)
+                    ? Vnode('button', {
+                        onClick: () => setTodos(getTodos().filter(todo => !todo.completed)),
+                        class: 'clear-completed'
+                    }, 'Clear completed')
+                    : null
             ])
             : null
     ]);
