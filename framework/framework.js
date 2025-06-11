@@ -31,9 +31,13 @@ export function createState(initial) {
   };
 
   const set = (next) => {
-    if (state === next) return;
+    if (Object.is(state, next)) return;
     state = next;
-    isBatching ? batchQueue.push(...listeners) : listeners.forEach(fn => fn());
+    if (isBatching) {
+      listeners.forEach(fn => batchQueue.push(fn));
+    } else {
+      batch(() => listeners.forEach(fn => fn()));
+    }
   };
 
   return [get, set];
@@ -49,11 +53,23 @@ export function effect(fn) {
 }
 
 export function batch(fn) {
+  if (isBatching) {
+    fn();
+    return;
+  }
+  
   isBatching = true;
-  fn();
-  isBatching = false;
-  [...new Set(batchQueue)].forEach(fn => fn());
+  const prevQueue = batchQueue;
   batchQueue = [];
+  
+  try {
+    fn();
+  } finally {
+    isBatching = false;
+    const uniqueEffects = [...new Set(batchQueue)];
+    batchQueue = prevQueue;
+    uniqueEffects.forEach(effect => effect());
+  }
 }
 
 // ========== DOM PATCHING ==========

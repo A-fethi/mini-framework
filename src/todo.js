@@ -1,15 +1,21 @@
-import { Vnode, startRouter, createState } from './framework.js';
+import { Vnode, startRouter, createState, batch } from '../framework/framework.js';
+
 const [getTodos, setTodos] = createState([]);
 const [getNew, setNew] = createState('');
 
 function Todos(filterFn) {
+    console.log('Rendering Todos with filter:', filterFn.name);
+
+    const todos = getTodos();
+    const newValue = getNew();
+
     return Vnode('header', {}, [
         Vnode('h1', {}, 'todos'),
         Vnode('div', {}, [
             Vnode('input', {
                 type: 'text',
                 class: 'new-todo',
-                value: getNew(),
+                value: newValue,
                 onInput: e => setNew(e.target.value),
                 placeholder: "What needs to be done?",
                 onKeydown: e => {
@@ -22,23 +28,23 @@ function Todos(filterFn) {
                 }
             }),
         ]),
-        getTodos().length > 0 ? Vnode('div', { class: 'toggle-all-container' }, [
+
+        todos.length > 0 ? Vnode('div', { class: 'toggle-all-container' }, [
             Vnode('input', {
                 type: 'checkbox',
                 id: 'toggle-all-input',
                 class: 'toggle-all',
-                checked: getTodos().every(todo => todo.completed),
+                checked: todos.every(todo => todo.completed),
                 onClick: () => {
-                    const allCompleted = getTodos().every(todo => todo.completed);
-                    setTodos(getTodos().map(todo => ({ ...todo, completed: !allCompleted })));
+                    const allCompleted = todos.every(todo => todo.completed);
+                    setTodos(todos.map(todo => ({ ...todo, completed: !allCompleted })));
                 }
             }),
-            Vnode('label', { class: 'toggle-all-label', for: 'toggle-all-input' })
-        ])
-            : null,
+            Vnode('label', { class: 'toggle-all-label', htmlFor: 'toggle-all-input' })
+        ]) : null,
 
         Vnode('ul', { class: 'todo-list' }, [
-            getTodos().filter(filterFn).map(todo =>
+            todos.filter(filterFn).map(todo =>
                 Vnode('li', {
                     key: todo.id,
                     class: `${todo.completed ? 'completed' : ''} ${todo.editing ? 'editing' : ''}`
@@ -93,10 +99,10 @@ function Todos(filterFn) {
             )
         ]),
 
-        getTodos().length > 0
+        todos.length > 0
             ? Vnode('footer', { class: 'footer' }, [
                 Vnode('span', { class: 'todo-count' },
-                    `${getTodos().filter(t => !t.completed).length} item left!`
+                    `${todos.filter(t => !t.completed).length} item left!`
                 ),
                 Vnode('ul', { class: 'filters' }, [
                     Vnode('li', {}, [
@@ -109,7 +115,7 @@ function Todos(filterFn) {
                         Vnode('a', { href: '#/completed', class: location.hash === '#/completed' ? 'selected' : '' }, 'Completed')
                     ])
                 ]),
-                getTodos().some(todo => todo.completed)
+                todos.some(todo => todo.completed)
                     ? Vnode('button', {
                         onClick: () => setTodos(getTodos().filter(todo => !todo.completed)),
                         class: 'clear-completed'
@@ -125,5 +131,6 @@ const routes = {
     '/active': () => Todos(todo => !todo.completed),
     '/completed': () => Todos(todo => todo.completed)
 };
+
 const app = document.getElementById('app');
 startRouter(routes, app);
